@@ -1,63 +1,73 @@
 package main
 
 import (
-	"bufio"
-	"flag"
-	"net"
 	"fmt"
+	"net"
+	"os"
+	"strings"
+	"sync"
 )
 
-type Message struct {
-	sender  int
-	message string
+var clients = make(map[net.Conn]bool) // 保存所有客户端连接
+var mutex = &sync.Mutex{}             // 用于保护 clients 共享资源
+
+// 广播消息给所有客户端，除了发送者
+func broadcastMessage(sender net.Conn, message string) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	for client := range clients {
+		if client != sender { // 不发送给发送者
+			_, err := client.Write([]byte(message + "\n"))
+			if err != nil {
+				fmt.Println("Error broadcasting to client:", err)
+				client.Close()
+				delete(clients, client) // 移除连接断开的客户端
+			}
+		}
+	}
 }
 
-func handleError(err error) {
-	// TODO: all
-	// Deal with an error event.
-}
+// 处理单个客户端连接
+func handleClient(conn net.Conn) {
+	defer conn.Close()
+	mutex.Lock()
+	clients[conn] = true // 将新连接的客户端加入列表
+	mutex.Unlock()
 
-func acceptConns(ln net.Listener, conns chan net.Conn) {
-	// TODO: all
-	// Continuously accept a network connection from the Listener
-	// and add it to the channel for handling connections.
-}
+	buf := make([]byte, 1024)
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			fmt.Println("Error reading message:", err)
+			mutex.Lock()
+			delete(clients, conn) // 移除断开的客户端
+			mutex.Unlock()
+			return
+		}
+		message := string(buf[:n])
+		fmt.Println("Received message:", message)
 
-func handleClient(client net.Conn, clientid int, msgs chan Message) {
-	// TODO: all
-	// So long as this connection is alive:
-	// Read in new messages as delimited by '\n's
-	// Tidy up each message and add it to the messages channel,
-	// recording which client it came from.
+		// 广播消息给其他客户端
+		broadcastMessage(conn, strings.TrimSpace(message))
+	}
 }
 
 func main() {
-	// Read in the network port we should listen on, from the commandline argument.
-	// Default to port 8030
-	portPtr := flag.String("port", ":8030", "port to listen on")
-	flag.Parse()
+	listener, err := net.Listen("tcp", ":8030")
+	if err != nil {
+		fmt.Println("Error listening:", err)
+		os.Exit(1)
+	}
+	defer listener.Close()
+	fmt.Println("Server is listening on port 8030...")
 
-	//TODO Create a Listener for TCP connections on the port given above.
-
-	//Create a channel for connections
-	conns := make(chan net.Conn)
-	//Create a channel for messages
-	msgs := make(chan Message)
-	//Create a mapping of IDs to connections
-	clients := make(map[int]net.Conn)
-
-	//Start accepting connections
-	go acceptConns(ln, conns)
 	for {
-		select {
-		case conn := <-conns:
-			//TODO Deal with a new connection
-			// - assign a client ID
-			// - add the client to the clients map
-			// - start to asynchronously handle messages from this client
-		case msg := <-msgs:
-			//TODO Deal with a new message
-			// Send the message to all clients that aren't the sender
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection:", err)
+			continue
 		}
+		go handleClient(conn)
 	}
 }

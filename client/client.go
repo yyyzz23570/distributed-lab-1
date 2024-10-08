@@ -1,24 +1,42 @@
 package main
 
 import (
-	"flag"
-	"net"
+	"bufio"
 	"fmt"
+	"net"
+	"os"
 )
 
-func read(conn net.Conn) {
-	//TODO In a continuous loop, read a message from the server and display it.
-}
-
-func write(conn net.Conn) {
-	//TODO Continually get input from the user and send messages to the server.
+func readFromServer(conn net.Conn) {
+	reader := bufio.NewReader(conn)
+	for {
+		message, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Error reading from server:", err)
+			return
+		}
+		fmt.Print("Server message: " + message)
+	}
 }
 
 func main() {
-	// Get the server address and port from the commandline arguments.
-	addrPtr := flag.String("ip", "127.0.0.1:8030", "IP:port string to connect to")
-	flag.Parse()
-	//TODO Try to connect to the server
-	//TODO Start asynchronously reading and displaying messages
-	//TODO Start getting and sending user messages.
+	conn, err := net.Dial("tcp", "127.0.0.1:8030")
+	if err != nil {
+		fmt.Println("Error connecting to server:", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	go readFromServer(conn)
+
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Print("Enter message: ")
+		message, _ := reader.ReadString('\n')
+		_, err = conn.Write([]byte(message))
+		if err != nil {
+			fmt.Println("Error sending message:", err)
+			return
+		}
+	}
 }
