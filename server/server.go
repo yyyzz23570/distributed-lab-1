@@ -54,7 +54,8 @@ func handleClient(conn net.Conn) {
 }
 
 func main() {
-	listener, err := net.Listen("tcp", ":8030")
+	listener, err := net.Listen("tcp", "0.0.0.0:8030")
+
 	if err != nil {
 		fmt.Println("Error listening:", err)
 		os.Exit(1)
